@@ -344,13 +344,5 @@ window.debugChip8 = {
 
 // 初期表示
 chip8.clearDisplay();
-chip8.setPixel(2, 2, 1);
-chip8.setPixel(3, 2, 1);
-chip8.setPixel(4, 2, 1);
-chip8.setPixel(4, 3, 1);
-chip8.setPixel(4, 4, 1);
-chip8.setPixel(3, 4, 1);
-chip8.setPixel(2, 4, 1);
-
 render();
 updateDebugInfo();
