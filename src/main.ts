@@ -4,6 +4,15 @@ import { Chip8 } from "./chip8";
 const SCALE = 12;
 const CYCLES_PER_FRAME = 10;
 
+declare global {
+  interface Window {
+    debugChip8: {
+      loadRomBytes: (bytes: number[]) => void;
+      loadRomHex: (hex: string) => void;
+    };
+  }
+}
+
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <div class="container">
     <div class="console-shell">
@@ -135,6 +144,16 @@ function updateDebugInfo(programLength = 0): void {
   ].join("\n");
 }
 
+function loadProgram(program: Uint8Array, label: string): void {
+  chip8.loadRom(program);
+  loadedProgramLength = program.length;
+  lastOpcode = 0;
+  render();
+  updateDebugInfo(loadedProgramLength);
+  startExecution();
+  status.textContent = `読み込み成功: ${label} (${program.length} bytes)`;
+}
+
 function stopExecution(message?: string): void {
   isRunning = false;
 
@@ -191,14 +210,7 @@ romInput.addEventListener("change", async (event) => {
     const buffer = await file.arrayBuffer();
     const program = new Uint8Array(buffer);
 
-    chip8.loadRom(program);
-    loadedProgramLength = program.length;
-    lastOpcode = 0;
-    render();
-    updateDebugInfo(loadedProgramLength);
-    startExecution();
-
-    status.textContent = `読み込み成功: ${file.name} (${program.length} bytes)`;
+    loadProgram(program, file.name);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "ROMの読み込みに失敗しました。";
@@ -210,6 +222,36 @@ romInput.addEventListener("change", async (event) => {
     debug.textContent = "";
   }
 });
+
+window.debugChip8 = {
+  loadRomBytes(bytes: number[]): void {
+    loadProgram(new Uint8Array(bytes), "console bytes");
+  },
+
+  loadRomHex(hex: string): void {
+    const sanitized = hex.replaceAll(/\s+/g, "");
+
+    if (sanitized.length === 0 || sanitized.length % 2 !== 0) {
+      throw new Error("Hex string must contain an even number of characters.");
+    }
+
+    const program = new Uint8Array(sanitized.length / 2);
+
+    for (let index = 0; index < sanitized.length; index += 2) {
+      const value = Number.parseInt(sanitized.slice(index, index + 2), 16);
+
+      if (Number.isNaN(value)) {
+        throw new Error(
+          `Invalid hex byte: ${sanitized.slice(index, index + 2)}`,
+        );
+      }
+
+      program[index / 2] = value;
+    }
+
+    loadProgram(program, "console hex");
+  },
+};
 
 // 初期表示
 chip8.clearDisplay();
