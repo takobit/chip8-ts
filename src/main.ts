@@ -5,6 +5,24 @@ const SCALE = 12;
 const CPU_HZ = 600;
 const TIMER_HZ = 60;
 const MAX_FRAME_DELTA_MS = 100;
+const KEY_MAP: Record<string, number> = {
+  "1": 0x1,
+  "2": 0x2,
+  "3": 0x3,
+  "4": 0xc,
+  q: 0x4,
+  w: 0x5,
+  e: 0x6,
+  r: 0xd,
+  a: 0x7,
+  s: 0x8,
+  d: 0x9,
+  f: 0xe,
+  z: 0xa,
+  x: 0x0,
+  c: 0xb,
+  v: 0xf,
+};
 
 declare global {
   interface Window {
@@ -227,6 +245,17 @@ function startExecution(): void {
   animationFrameId = requestAnimationFrame(stepFrame);
 }
 
+function handleKeyEvent(event: KeyboardEvent, isPressed: boolean): void {
+  const chip8Key = KEY_MAP[event.key.toLowerCase()];
+
+  if (chip8Key === undefined) {
+    return;
+  }
+
+  event.preventDefault();
+  chip8.setKeyState(chip8Key, isPressed);
+}
+
 romInput.addEventListener("change", async (event) => {
   const input = event.currentTarget as HTMLInputElement;
   const file = input.files?.[0];
@@ -250,6 +279,14 @@ romInput.addEventListener("change", async (event) => {
     status.textContent = `エラー: ${message}`;
     debug.textContent = "";
   }
+});
+
+window.addEventListener("keydown", (event) => {
+  handleKeyEvent(event, true);
+});
+
+window.addEventListener("keyup", (event) => {
+  handleKeyEvent(event, false);
 });
 
 window.debugChip8 = {

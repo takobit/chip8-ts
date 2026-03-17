@@ -37,6 +37,7 @@ export class Chip8 {
   private soundTimer: number;
   private keypad: Uint8Array;
   private display: Uint8Array;
+  private waitingForKeyRegister: number | null;
 
   constructor() {
     this.memory = new Uint8Array(Chip8.MEMORY_SIZE);
@@ -49,10 +50,15 @@ export class Chip8 {
     this.soundTimer = 0;
     this.keypad = new Uint8Array(Chip8.KEYPAD_SIZE);
     this.display = new Uint8Array(Chip8.DISPLAY_WIDTH * Chip8.DISPLAY_HEIGHT);
+    this.waitingForKeyRegister = null;
     this.loadFontSet();
   }
 
   cycle(): number {
+    if (this.waitingForKeyRegister !== null) {
+      return 0;
+    }
+
     const opcode = this.fetchOpcode();
     this.pc = (this.pc + 2) & 0xffff;
     this.executeOpcode(opcode);
@@ -82,6 +88,7 @@ export class Chip8 {
     this.soundTimer = 0;
     this.keypad.fill(0);
     this.display.fill(0);
+    this.waitingForKeyRegister = null;
     this.loadFontSet();
   }
 
@@ -146,8 +153,25 @@ export class Chip8 {
     return this.soundTimer;
   }
 
+  isWaitingForKey(): boolean {
+    return this.waitingForKeyRegister !== null;
+  }
+
   getMemorySlice(start: number, end: number): Uint8Array {
     return this.memory.slice(start, end);
+  }
+
+  setKeyState(key: number, isPressed: boolean): void {
+    if (key < 0 || key >= Chip8.KEYPAD_SIZE) {
+      throw new Error(`Key index out of range: ${key.toString(16)}`);
+    }
+
+    this.keypad[key] = isPressed ? 1 : 0;
+
+    if (isPressed && this.waitingForKeyRegister !== null) {
+      this.v[this.waitingForKeyRegister] = key;
+      this.waitingForKeyRegister = null;
+    }
   }
 
   loadRom(program: Uint8Array): void {
@@ -286,11 +310,34 @@ export class Chip8 {
         this.drawSprite(this.v[x], this.v[y], n);
         return;
 
+      case 0xe000:
+        switch (nn) {
+          case 0x9e:
+            // EX9E: Skip the next instruction if the key stored in VX is pressed.
+            if (this.isKeyPressed(this.v[x])) {
+              this.pc = (this.pc + 2) & 0xffff;
+            }
+            return;
+          case 0xa1:
+            // EXA1: Skip the next instruction if the key stored in VX is not pressed.
+            if (!this.isKeyPressed(this.v[x])) {
+              this.pc = (this.pc + 2) & 0xffff;
+            }
+            return;
+          default:
+            break;
+        }
+        break;
+
       case 0xf000:
         switch (nn) {
           case 0x07:
             // FX07: Set VX to the current delay timer value.
             this.v[x] = this.delayTimer;
+            return;
+          case 0x0a:
+            // FX0A: Wait for a key press and store the key in VX.
+            this.waitingForKeyRegister = x;
             return;
           case 0x15:
             // FX15: Set the delay timer to VX.
@@ -417,6 +464,10 @@ export class Chip8 {
         this.display[index] = next;
       }
     }
+  }
+
+  private isKeyPressed(key: number): boolean {
+    return key >= 0 && key < Chip8.KEYPAD_SIZE && this.keypad[key] === 1;
   }
 
   private loadFontSet(): void {
