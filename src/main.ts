@@ -29,6 +29,8 @@ declare global {
     debugChip8: {
       loadRomBytes: (bytes: number[]) => void;
       loadRomHex: (hex: string) => void;
+      getLoadedRomHex: () => string;
+      printLoadedRomHex: () => void;
     };
   }
 }
@@ -104,6 +106,7 @@ const romInput = romInputElement;
 
 const chip8 = new Chip8();
 let loadedProgramLength = 0;
+let loadedProgram: Uint8Array | null = null;
 let lastOpcode = 0;
 let isRunning = false;
 let animationFrameId: number | null = null;
@@ -145,6 +148,12 @@ function toHex(value: number, width = 2): string {
   return value.toString(16).toUpperCase().padStart(width, "0");
 }
 
+function programToHex(program: Uint8Array): string {
+  return Array.from(program)
+    .map((byte) => toHex(byte))
+    .join("");
+}
+
 function updateDebugInfo(programLength = 0): void {
   const start = chip8.getProgramStart();
   const previewLength = Math.min(programLength, 32);
@@ -169,6 +178,7 @@ function updateDebugInfo(programLength = 0): void {
 
 function loadProgram(program: Uint8Array, label: string): void {
   chip8.loadRom(program);
+  loadedProgram = new Uint8Array(program);
   loadedProgramLength = program.length;
   lastOpcode = 0;
   render();
@@ -274,6 +284,7 @@ romInput.addEventListener("change", async (event) => {
       error instanceof Error ? error.message : "ROMの読み込みに失敗しました。";
 
     stopExecution();
+    loadedProgram = null;
     loadedProgramLength = 0;
     lastOpcode = 0;
     status.textContent = `エラー: ${message}`;
@@ -316,6 +327,18 @@ window.debugChip8 = {
     }
 
     loadProgram(program, "console hex");
+  },
+
+  getLoadedRomHex(): string {
+    if (!loadedProgram) {
+      throw new Error("No ROM is currently loaded.");
+    }
+
+    return programToHex(loadedProgram);
+  },
+
+  printLoadedRomHex(): void {
+    console.log(window.debugChip8.getLoadedRomHex());
   },
 };
 
