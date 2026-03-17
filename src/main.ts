@@ -2,6 +2,7 @@ import "./style.css";
 import { Chip8 } from "./chip8";
 
 const SCALE = 12;
+const CYCLES_PER_FRAME = 10;
 
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <div class="container">
@@ -73,6 +74,10 @@ const debug = debugElement;
 const romInput = romInputElement;
 
 const chip8 = new Chip8();
+let loadedProgramLength = 0;
+let lastOpcode = 0;
+let isRunning = false;
+let animationFrameId: number | null = null;
 
 canvas.width = chip8.getDisplayWidth() * SCALE;
 canvas.height = chip8.getDisplayHeight() * SCALE;
@@ -119,6 +124,7 @@ function updateDebugInfo(programLength = 0): void {
 
   debug.textContent = [
     `PC: 0x${toHex(chip8.getProgramCounter(), 4)}`,
+    `Opcode: 0x${toHex(lastOpcode, 4)}`,
     `I: 0x${toHex(chip8.getIndexRegister(), 4)}`,
     `SP: ${chip8.getStackPointer()}`,
     `Delay Timer: ${chip8.getDelayTimer()}`,
@@ -127,6 +133,50 @@ function updateDebugInfo(programLength = 0): void {
     `Loaded Bytes: ${programLength}`,
     `Memory Preview: ${bytes || "(empty)"}`,
   ].join("\n");
+}
+
+function stopExecution(message?: string): void {
+  isRunning = false;
+
+  if (animationFrameId !== null) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
+
+  if (message) {
+    status.textContent = message;
+  }
+}
+
+function stepFrame(): void {
+  if (!isRunning) {
+    return;
+  }
+
+  try {
+    for (let cycle = 0; cycle < CYCLES_PER_FRAME; cycle += 1) {
+      lastOpcode = chip8.cycle();
+    }
+
+    render();
+    updateDebugInfo(loadedProgramLength);
+    animationFrameId = requestAnimationFrame(stepFrame);
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "実行中に不明なエラーが発生しました。";
+
+    render();
+    updateDebugInfo(loadedProgramLength);
+    stopExecution(`実行停止: ${message}`);
+  }
+}
+
+function startExecution(): void {
+  stopExecution();
+  isRunning = true;
+  animationFrameId = requestAnimationFrame(stepFrame);
 }
 
 romInput.addEventListener("change", async (event) => {
@@ -142,14 +192,20 @@ romInput.addEventListener("change", async (event) => {
     const program = new Uint8Array(buffer);
 
     chip8.loadRom(program);
+    loadedProgramLength = program.length;
+    lastOpcode = 0;
     render();
-    updateDebugInfo(program.length);
+    updateDebugInfo(loadedProgramLength);
+    startExecution();
 
     status.textContent = `読み込み成功: ${file.name} (${program.length} bytes)`;
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "ROMの読み込みに失敗しました。";
 
+    stopExecution();
+    loadedProgramLength = 0;
+    lastOpcode = 0;
     status.textContent = `エラー: ${message}`;
     debug.textContent = "";
   }
