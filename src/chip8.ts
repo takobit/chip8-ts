@@ -4,8 +4,28 @@ export class Chip8 {
   static readonly DISPLAY_HEIGHT = 32;
   static readonly REGISTER_COUNT = 16;
   static readonly STACK_SIZE = 16;
+  static readonly FONT_START = 0x50;
+  static readonly FONT_CHAR_BYTES = 5;
   static readonly PROGRAM_START = 0x200;
   static readonly KEYPAD_SIZE = 16;
+  static readonly FONT_SET = new Uint8Array([
+    0xf0, 0x90, 0x90, 0x90, 0xf0, // 0
+    0x20, 0x60, 0x20, 0x20, 0x70, // 1
+    0xf0, 0x10, 0xf0, 0x80, 0xf0, // 2
+    0xf0, 0x10, 0xf0, 0x10, 0xf0, // 3
+    0x90, 0x90, 0xf0, 0x10, 0x10, // 4
+    0xf0, 0x80, 0xf0, 0x10, 0xf0, // 5
+    0xf0, 0x80, 0xf0, 0x90, 0xf0, // 6
+    0xf0, 0x10, 0x20, 0x40, 0x40, // 7
+    0xf0, 0x90, 0xf0, 0x90, 0xf0, // 8
+    0xf0, 0x90, 0xf0, 0x10, 0xf0, // 9
+    0xf0, 0x90, 0xf0, 0x90, 0x90, // A
+    0xe0, 0x90, 0xe0, 0x90, 0xe0, // B
+    0xf0, 0x80, 0x80, 0x80, 0xf0, // C
+    0xe0, 0x90, 0x90, 0x90, 0xe0, // D
+    0xf0, 0x80, 0xf0, 0x80, 0xf0, // E
+    0xf0, 0x80, 0xf0, 0x80, 0x80, // F
+  ]);
 
   private memory: Uint8Array;
   private v: Uint8Array;
@@ -29,6 +49,7 @@ export class Chip8 {
     this.soundTimer = 0;
     this.keypad = new Uint8Array(Chip8.KEYPAD_SIZE);
     this.display = new Uint8Array(Chip8.DISPLAY_WIDTH * Chip8.DISPLAY_HEIGHT);
+    this.loadFontSet();
   }
 
   cycle(): number {
@@ -49,6 +70,7 @@ export class Chip8 {
     this.soundTimer = 0;
     this.keypad.fill(0);
     this.display.fill(0);
+    this.loadFontSet();
   }
 
   clearDisplay(): void {
@@ -254,9 +276,25 @@ export class Chip8 {
 
       case 0xf000:
         switch (nn) {
+          case 0x29:
+            // FX29: Set I to the sprite address for the digit stored in VX.
+            this.i = this.getFontAddress(this.v[x]);
+            return;
+          case 0x33:
+            // FX33: Store the BCD digits of VX at memory[I..I+2].
+            this.storeBcd(this.v[x]);
+            return;
           case 0x1e:
             // FX1E: Add VX to I.
             this.i = (this.i + this.v[x]) & 0x0fff;
+            return;
+          case 0x55:
+            // FX55: Store registers V0 through VX in memory starting at I.
+            this.storeRegisters(x);
+            return;
+          case 0x65:
+            // FX65: Load registers V0 through VX from memory starting at I.
+            this.loadRegisters(x);
             return;
           default:
             break;
@@ -354,6 +392,45 @@ export class Chip8 {
 
         this.display[index] = next;
       }
+    }
+  }
+
+  private loadFontSet(): void {
+    this.memory.set(Chip8.FONT_SET, Chip8.FONT_START);
+  }
+
+  private getFontAddress(digit: number): number {
+    const normalizedDigit = digit & 0x0f;
+    return Chip8.FONT_START + normalizedDigit * Chip8.FONT_CHAR_BYTES;
+  }
+
+  private storeBcd(value: number): void {
+    if (this.i + 2 >= Chip8.MEMORY_SIZE) {
+      throw new Error(`BCD store out of bounds at I=0x${this.i.toString(16)}`);
+    }
+
+    this.memory[this.i] = Math.floor(value / 100);
+    this.memory[this.i + 1] = Math.floor((value % 100) / 10);
+    this.memory[this.i + 2] = value % 10;
+  }
+
+  private storeRegisters(lastRegister: number): void {
+    if (this.i + lastRegister >= Chip8.MEMORY_SIZE) {
+      throw new Error(`Register store out of bounds at I=0x${this.i.toString(16)}`);
+    }
+
+    for (let register = 0; register <= lastRegister; register += 1) {
+      this.memory[this.i + register] = this.v[register];
+    }
+  }
+
+  private loadRegisters(lastRegister: number): void {
+    if (this.i + lastRegister >= Chip8.MEMORY_SIZE) {
+      throw new Error(`Register load out of bounds at I=0x${this.i.toString(16)}`);
+    }
+
+    for (let register = 0; register <= lastRegister; register += 1) {
+      this.v[register] = this.memory[this.i + register];
     }
   }
 }
