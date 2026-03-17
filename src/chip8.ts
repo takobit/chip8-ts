@@ -31,6 +31,13 @@ export class Chip8 {
     this.display = new Uint8Array(Chip8.DISPLAY_WIDTH * Chip8.DISPLAY_HEIGHT);
   }
 
+  cycle(): number {
+    const opcode = this.fetchOpcode();
+    this.pc = (this.pc + 2) & 0xffff;
+    this.executeOpcode(opcode);
+    return opcode;
+  }
+
   reset(): void {
     this.memory.fill(0);
     this.v.fill(0);
@@ -59,6 +66,14 @@ export class Chip8 {
     }
 
     this.display[y * Chip8.DISPLAY_WIDTH + x] = value;
+  }
+
+  getRegister(index: number): number {
+    if (index < 0 || index >= Chip8.REGISTER_COUNT) {
+      throw new Error(`Register index out of range: V${index.toString(16)}`);
+    }
+
+    return this.v[index];
   }
 
   getDisplay(): Uint8Array {
@@ -114,5 +129,186 @@ export class Chip8 {
     this.reset();
     this.memory.set(program, start);
     this.pc = Chip8.PROGRAM_START;
+  }
+
+  private fetchOpcode(): number {
+    if (this.pc < 0 || this.pc + 1 >= Chip8.MEMORY_SIZE) {
+      throw new Error(`Program counter out of bounds: 0x${this.pc.toString(16)}`);
+    }
+
+    return (this.memory[this.pc] << 8) | this.memory[this.pc + 1];
+  }
+
+  private executeOpcode(opcode: number): void {
+    const x = (opcode & 0x0f00) >> 8;
+    const y = (opcode & 0x00f0) >> 4;
+    const n = opcode & 0x000f;
+    const nn = opcode & 0x00ff;
+    const nnn = opcode & 0x0fff;
+
+    switch (opcode & 0xf000) {
+      case 0x0000:
+        switch (opcode) {
+          case 0x00e0:
+            // 00E0: Clear the display.
+            this.clearDisplay();
+            return;
+          case 0x00ee:
+            // 00EE: Return from a subroutine.
+            if (this.sp === 0) {
+              throw new Error("Stack underflow on RET");
+            }
+
+            this.sp -= 1;
+            this.pc = this.stack[this.sp];
+            return;
+          default:
+            throw new Error(`Unsupported opcode: 0x${opcode.toString(16).padStart(4, "0")}`);
+        }
+
+      case 0x1000:
+        // 1NNN: Jump to address NNN.
+        this.pc = nnn;
+        return;
+
+      case 0x2000:
+        // 2NNN: Call subroutine at address NNN.
+        if (this.sp >= Chip8.STACK_SIZE) {
+          throw new Error("Stack overflow on CALL");
+        }
+
+        this.stack[this.sp] = this.pc;
+        this.sp += 1;
+        this.pc = nnn;
+        return;
+
+      case 0x3000:
+        // 3XNN: Skip the next instruction if VX equals NN.
+        if (this.v[x] === nn) {
+          this.pc = (this.pc + 2) & 0xffff;
+        }
+        return;
+
+      case 0x4000:
+        // 4XNN: Skip the next instruction if VX does not equal NN.
+        if (this.v[x] !== nn) {
+          this.pc = (this.pc + 2) & 0xffff;
+        }
+        return;
+
+      case 0x5000:
+        if (n !== 0) {
+          break;
+        }
+
+        // 5XY0: Skip the next instruction if VX equals VY.
+        if (this.v[x] === this.v[y]) {
+          this.pc = (this.pc + 2) & 0xffff;
+        }
+        return;
+
+      case 0x6000:
+        // 6XNN: Set VX to NN.
+        this.v[x] = nn;
+        return;
+
+      case 0x7000:
+        // 7XNN: Add NN to VX.
+        this.v[x] = (this.v[x] + nn) & 0xff;
+        return;
+
+      case 0x8000:
+        this.executeMathOpcode(opcode, x, y, n);
+        return;
+
+      case 0x9000:
+        if (n !== 0) {
+          break;
+        }
+
+        // 9XY0: Skip the next instruction if VX does not equal VY.
+        if (this.v[x] !== this.v[y]) {
+          this.pc = (this.pc + 2) & 0xffff;
+        }
+        return;
+
+      case 0xa000:
+        // ANNN: Set I to address NNN.
+        this.i = nnn;
+        return;
+
+      case 0xb000:
+        // BNNN: Jump to address NNN plus V0.
+        this.pc = (nnn + this.v[0]) & 0x0fff;
+        return;
+
+      case 0xd000:
+        // DXYN: Draw an N-byte sprite at (VX, VY).
+        this.drawSprite(this.v[x], this.v[y], n);
+        return;
+    }
+
+    throw new Error(`Unsupported opcode: 0x${opcode.toString(16).padStart(4, "0")}`);
+  }
+
+  private executeMathOpcode(opcode: number, x: number, y: number, n: number): void {
+    switch (n) {
+      case 0x0:
+        // 8XY0: Set VX to VY.
+        this.v[x] = this.v[y];
+        return;
+
+      case 0x1:
+        // 8XY1: Set VX to VX OR VY.
+        this.v[x] |= this.v[y];
+        return;
+
+      case 0x2:
+        // 8XY2: Set VX to VX AND VY.
+        this.v[x] &= this.v[y];
+        return;
+
+      case 0x3:
+        // 8XY3: Set VX to VX XOR VY.
+        this.v[x] ^= this.v[y];
+        return;
+
+      case 0x4: {
+        // 8XY4: Add VY to VX and set VF on carry.
+        const sum = this.v[x] + this.v[y];
+        this.v[0xf] = sum > 0xff ? 1 : 0;
+        this.v[x] = sum & 0xff;
+        return;
+      }
+
+      default:
+        throw new Error(`Unsupported opcode: 0x${opcode.toString(16).padStart(4, "0")}`);
+    }
+  }
+
+  private drawSprite(x: number, y: number, height: number): void {
+    this.v[0xf] = 0;
+
+    for (let row = 0; row < height; row += 1) {
+      const sprite = this.memory[this.i + row];
+
+      for (let bit = 0; bit < 8; bit += 1) {
+        if ((sprite & (0x80 >> bit)) === 0) {
+          continue;
+        }
+
+        const px = (x + bit) % Chip8.DISPLAY_WIDTH;
+        const py = (y + row) % Chip8.DISPLAY_HEIGHT;
+        const index = py * Chip8.DISPLAY_WIDTH + px;
+        const previous = this.display[index];
+        const next = previous ^ 1;
+
+        if (previous === 1 && next === 0) {
+          this.v[0xf] = 1;
+        }
+
+        this.display[index] = next;
+      }
+    }
   }
 }
