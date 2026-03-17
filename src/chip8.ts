@@ -242,10 +242,26 @@ export class Chip8 {
         this.pc = (nnn + this.v[0]) & 0x0fff;
         return;
 
+      case 0xc000:
+        // CXNN: Set VX to a random byte AND NN.
+        this.v[x] = (Math.floor(Math.random() * 0x100) & nn) & 0xff;
+        return;
+
       case 0xd000:
         // DXYN: Draw an N-byte sprite at (VX, VY).
         this.drawSprite(this.v[x], this.v[y], n);
         return;
+
+      case 0xf000:
+        switch (nn) {
+          case 0x1e:
+            // FX1E: Add VX to I.
+            this.i = (this.i + this.v[x]) & 0x0fff;
+            return;
+          default:
+            break;
+        }
+        break;
     }
 
     throw new Error(`Unsupported opcode: 0x${opcode.toString(16).padStart(4, "0")}`);
@@ -280,6 +296,35 @@ export class Chip8 {
         this.v[x] = sum & 0xff;
         return;
       }
+
+      case 0x5: {
+        // 8XY5: Subtract VY from VX and set VF when no borrow occurs.
+        const difference = this.v[x] - this.v[y];
+        this.v[0xf] = this.v[x] >= this.v[y] ? 1 : 0;
+        this.v[x] = difference & 0xff;
+        return;
+      }
+
+      case 0x6: {
+        // 8XY6: Shift VX right by one and store the dropped bit in VF.
+        this.v[0xf] = this.v[x] & 0x1;
+        this.v[x] = this.v[x] >> 1;
+        return;
+      }
+
+      case 0x7: {
+        // 8XY7: Set VX to VY minus VX and set VF when no borrow occurs.
+        const difference = this.v[y] - this.v[x];
+        this.v[0xf] = this.v[y] >= this.v[x] ? 1 : 0;
+        this.v[x] = difference & 0xff;
+        return;
+      }
+
+      case 0xe:
+        // 8XYE: Shift VX left by one and store the dropped bit in VF.
+        this.v[0xf] = (this.v[x] & 0x80) >> 7;
+        this.v[x] = (this.v[x] << 1) & 0xff;
+        return;
 
       default:
         throw new Error(`Unsupported opcode: 0x${opcode.toString(16).padStart(4, "0")}`);
