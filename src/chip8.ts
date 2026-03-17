@@ -59,6 +59,18 @@ export class Chip8 {
     return opcode;
   }
 
+  tickTimers(ticks = 1): void {
+    for (let tick = 0; tick < ticks; tick += 1) {
+      if (this.delayTimer > 0) {
+        this.delayTimer -= 1;
+      }
+
+      if (this.soundTimer > 0) {
+        this.soundTimer -= 1;
+      }
+    }
+  }
+
   reset(): void {
     this.memory.fill(0);
     this.v.fill(0);
@@ -276,6 +288,18 @@ export class Chip8 {
 
       case 0xf000:
         switch (nn) {
+          case 0x07:
+            // FX07: Set VX to the current delay timer value.
+            this.v[x] = this.delayTimer;
+            return;
+          case 0x15:
+            // FX15: Set the delay timer to VX.
+            this.delayTimer = this.v[x];
+            return;
+          case 0x18:
+            // FX18: Set the sound timer to VX.
+            this.soundTimer = this.v[x];
+            return;
           case 0x29:
             // FX29: Set I to the sprite address for the digit stored in VX.
             this.i = this.getFontAddress(this.v[x]);

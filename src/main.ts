@@ -2,7 +2,9 @@ import "./style.css";
 import { Chip8 } from "./chip8";
 
 const SCALE = 12;
-const CYCLES_PER_FRAME = 10;
+const CPU_HZ = 600;
+const TIMER_HZ = 60;
+const MAX_FRAME_DELTA_MS = 100;
 
 declare global {
   interface Window {
@@ -87,6 +89,9 @@ let loadedProgramLength = 0;
 let lastOpcode = 0;
 let isRunning = false;
 let animationFrameId: number | null = null;
+let lastFrameTime = 0;
+let cycleAccumulator = 0;
+let timerAccumulator = 0;
 
 canvas.width = chip8.getDisplayWidth() * SCALE;
 canvas.height = chip8.getDisplayHeight() * SCALE;
@@ -156,6 +161,9 @@ function loadProgram(program: Uint8Array, label: string): void {
 
 function stopExecution(message?: string): void {
   isRunning = false;
+  lastFrameTime = 0;
+  cycleAccumulator = 0;
+  timerAccumulator = 0;
 
   if (animationFrameId !== null) {
     cancelAnimationFrame(animationFrameId);
@@ -167,14 +175,34 @@ function stopExecution(message?: string): void {
   }
 }
 
-function stepFrame(): void {
+function stepFrame(timestamp: number): void {
   if (!isRunning) {
     return;
   }
 
   try {
-    for (let cycle = 0; cycle < CYCLES_PER_FRAME; cycle += 1) {
+    if (lastFrameTime === 0) {
+      lastFrameTime = timestamp;
+    }
+
+    const deltaMs = Math.min(timestamp - lastFrameTime, MAX_FRAME_DELTA_MS);
+    lastFrameTime = timestamp;
+
+    cycleAccumulator += (deltaMs / 1000) * CPU_HZ;
+    timerAccumulator += (deltaMs / 1000) * TIMER_HZ;
+
+    const cyclesToRun = Math.floor(cycleAccumulator);
+    cycleAccumulator -= cyclesToRun;
+
+    const timerTicks = Math.floor(timerAccumulator);
+    timerAccumulator -= timerTicks;
+
+    for (let cycle = 0; cycle < cyclesToRun; cycle += 1) {
       lastOpcode = chip8.cycle();
+    }
+
+    if (timerTicks > 0) {
+      chip8.tickTimers(timerTicks);
     }
 
     render();
@@ -195,6 +223,7 @@ function stepFrame(): void {
 function startExecution(): void {
   stopExecution();
   isRunning = true;
+  lastFrameTime = 0;
   animationFrameId = requestAnimationFrame(stepFrame);
 }
 
